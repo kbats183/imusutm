@@ -1,7 +1,7 @@
 package main
 
 /*
-	Uptime Monitor Configuration and Types
+Uptime Monitor Configuration and Types
 */
 type Record struct {
 	Timestamp  int64
@@ -21,14 +21,15 @@ type Target struct {
 	Protocol string
 }
 type Config struct {
-	Targets       []*Target
-	Interval      int
-	RecordsInJson int
-	LogToFile     bool
+	Targets            []*Target
+	Interval           int
+	RecordsInJson      int
+	LogToFile          bool
+	HTTPRequestTimeout *int
 }
 
 /*
-	TOTP Configs
+TOTP Configs
 */
 type TotpEntry struct {
 	Name   string

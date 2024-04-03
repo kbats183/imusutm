@@ -166,7 +166,11 @@ func getWebsiteStatusWithLatency(url string) (bool, int64, int) {
 
 }
 func getWebsiteStatus(url string) (int, error) {
-	resp, err := http.Get(url)
+	httpClient := http.Client{}
+	if usingConfig.HTTPRequestTimeout != nil {
+		httpClient.Timeout = time.Second * time.Duration(*usingConfig.HTTPRequestTimeout)
+	}
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return 0, err
 	}
