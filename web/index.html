@@ -112,10 +112,24 @@
         <br>
 		<div class="ui container">
             <div class="ui top attached tabular menu">
-                <a class="item active" data-tab="utm"><i class="ui green circle check icon"></i> Uptime Monitor</a>
-                <a class="item" data-tab="totp"><i class="ui blue hourglass half icon"></i> TOTP</a>
+                <a class="item active" data-tab="sm"><i class="ui green circle check icon"></i> Services Monitor</a>
+                <a class="item" data-tab="utm"><i class="ui green circle check icon"></i> Uptime Monitor</a>
+<!--                <a class="item" data-tab="totp"><i class="ui blue hourglass half icon"></i> TOTP</a>-->
             </div>
-            <div class="ui bottom attached tab segment active" data-tab="utm">
+            <div class="ui bottom attached tab segment active" data-tab="sm">
+                <div id="sm" class="ui basic segment">
+                    <div class="ui basic segment">
+                        <h4 class="ui header">
+                            <i class="red remove icon"></i>
+                            <div class="content">
+                                Uptime Monitoring service is currently unavailable
+                                <div class="sub header">This might cause by an error in cluster communication within the host servers. Please wait for administrator to resolve the issue.</div>
+                            </div>
+                        </h4>
+                    </div>
+                </div>
+            </div>
+            <div class="ui bottom attached tab segment" data-tab="utm">
                 <div id="utm" class="ui basic segment">
                     <div class="ui basic segment">
                         <h4 class="ui header">
@@ -267,22 +281,17 @@
 			}
 			updateStatus();
 
-			//For every 5 minutes
+			//For every 5 seconds
 			setInterval(function(){
 				updateStatus();
-			}, (300 * 1000));
+			}, (5 * 1000));
 
-            function getNumberOfRecords(){
-                let recordcount = 0;
-                for (let [key, value] of Object.entries(records)) {
-                    recordcount++;
-                }
-
-                return recordcount;
+            function getNumberOfRecords() {
+                return Object.entries(records).length;
             }
 			
             function renderRecords(){
-                if (getNumberOfRecords() == 0){
+                if (getNumberOfRecords() === 0){
                     $("#utm").html(`<div class="ui basic segment">
                         <h4 class="ui header">
                             <i class="red remove icon"></i>
@@ -298,13 +307,52 @@
                 for (let [key, value] of Object.entries(records)) {
                     renderUptimeData(key, value);
                 }
+                $("#sm").html("");
+                for (let [key, value] of Object.entries(records)) {
+                    renderServiceData(key, value);
+                }
             }
 
             function format_time(s) {
                 const date = new Date(s * 1e3);
                 return(date.toLocaleString());
             }
-            
+
+            function renderServiceData(key, value){
+                let id = value[0].ID;
+                let name = value[0].Name;
+                let url = value[0].URL;
+                let protocol = value[0].Protocol;
+
+                //Check of online status now
+                let currentOnlineStatus = "Unknown";
+                let onlineStatusCss = ``;
+                if (value[value.length - 1].Online && !value[value.length - 1].HasErrors) {
+                    currentOnlineStatus = `<i class="circle icon"></i> Online`;
+                    onlineStatusCss = `color: #3bd671;`;
+                } else if (value[value.length - 1].Online && value[value.length - 1].HasErrors) {
+                    currentOnlineStatus = `<i class="circle icon"></i> Errors`;
+                    onlineStatusCss = `color: #f29030;`;
+                } else {
+                    currentOnlineStatus = `<i class="circle icon"></i> Offline`;
+                    onlineStatusCss = `color: #df484a;`;
+                }
+                //Generate the html
+                $("#sm").append(`<div class="ui basic statusbar">
+                    <div class="domain">
+                        <div style="position: absolute; top: 0; right: 0.4em;">
+                            <div class="ui basic label protocol" style="margin-bottom: -0.6em;">
+							    ${protocol}
+						    </div>
+                            <p class="onlineStatus" style="display: inline-block; font-size: 1.3em; padding-right: 0.5em; padding-left: 0.3em; ${onlineStatusCss}">${currentOnlineStatus}</p>
+                        </div>
+                        <div>
+                            <h3 class="ui header" style="margin-bottom: 0.2em;">${name}</h3>
+                        </div>
+                    </div>
+                    <div class="ui divider"></div>
+                </div>`);
+            }
 
             function renderUptimeData(key, value){
                 let id = value[0].ID;
@@ -314,7 +362,7 @@
 
                 //Generate the status dot
                 let statusDotList = ``;
-                for(var i = 0; i < (288 - value.length); i++){
+                for(var i = 0; i < (148 - value.length); i++){
                     //Padding
                     statusDotList += `<div class="padding statusDot"></div>`
                 }
@@ -324,14 +372,13 @@
                     //Render status to html
                     let thisStatus = value[i];
                     let dotType = "";
-                    if (thisStatus.Online){
-                        if (thisStatus.StatusCode < 200 || thisStatus.StatusCode >= 300){
-                            dotType = "error";
-                        }else{
-                            dotType = "online";
-                        }
+                    if (thisStatus.Online && thisStatus.HasErrors) {
+                        dotType = "error";
                         ontimeRate++;
-                    }else{
+                    } else if (thisStatus.Online && !thisStatus.HasErrors) {
+                        dotType = "online";
+                        ontimeRate++;
+                    } else{
                         dotType = "offline";
                     }
 
@@ -341,18 +388,21 @@
 
                 ontimeRate = ontimeRate / value.length * 100;
                 let ontimeColor = "#df484a"
-                if (ontimeRate > 0.8){
+                if (ontimeRate > 80) {
                     ontimeColor = "#3bd671";
-                }else if(ontimeRate > 0.5) {
+                }else if(ontimeRate > 50) {
                     ontimeColor = "#f29030";
                 }
                 //Check of online status now
                 let currentOnlineStatus = "Unknown";
                 let onlineStatusCss = ``;
-                if (value[value.length - 1].Online){
+                if (value[value.length - 1].Online && !value[value.length - 1].HasErrors) {
                     currentOnlineStatus = `<i class="circle icon"></i> Online`;
                     onlineStatusCss = `color: #3bd671;`;
-                }else{
+                } else if (value[value.length - 1].Online && value[value.length - 1].HasErrors) {
+                    currentOnlineStatus = `<i class="circle icon"></i> Errors`;
+                    onlineStatusCss = `color: #f29030;`;
+                } else {
                     currentOnlineStatus = `<i class="circle icon"></i> Offline`;
                     onlineStatusCss = `color: #df484a;`;
                 }

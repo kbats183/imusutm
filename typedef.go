@@ -10,6 +10,7 @@ type Record struct {
 	URL        string
 	Protocol   string
 	Online     bool
+	HasErrors  bool
 	StatusCode int
 	Latency    int64
 }
@@ -26,6 +27,7 @@ type Config struct {
 	RecordsInJson      int
 	LogToFile          bool
 	HTTPRequestTimeout *int
+	ICMPRequestTimeout *int
 }
 
 /*

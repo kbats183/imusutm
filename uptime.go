@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
+	probing "github.com/prometheus-community/pro-bing"
 	"imuslab.com/utm/pkg/utils"
 )
 
@@ -60,47 +63,17 @@ func UptimeMonitorInit() error {
 }
 
 func ExecuteUptimeCheck() {
+	var wg sync.WaitGroup
+
 	for _, target := range usingConfig.Targets {
-		//For each target to check online, do the following
-		var thisRecord Record
-		if target.Protocol == "http" || target.Protocol == "https" {
-			log.Println("Updating uptime status for " + target.Name)
-			online, laterncy, statusCode := getWebsiteStatusWithLatency(target.URL)
-			thisRecord = Record{
-				Timestamp:  time.Now().Unix(),
-				ID:         target.ID,
-				Name:       target.Name,
-				URL:        target.URL,
-				Protocol:   target.Protocol,
-				Online:     online,
-				StatusCode: statusCode,
-				Latency:    laterncy,
-			}
-
-			//fmt.Println(thisRecord)
-
-		} else {
-			log.Println("Unknown protocol: " + target.Protocol + ". Skipping")
-			continue
-		}
-
-		thisRecords, ok := onlineStatusLog[target.ID]
-		if !ok {
-			//First record. Create the array
-			onlineStatusLog[target.ID] = []*Record{&thisRecord}
-		} else {
-			//Append to the previous record
-			thisRecords = append(thisRecords, &thisRecord)
-
-			//Check if the record is longer than the logged record. If yes, clear out the old records
-			if len(thisRecords) > usingConfig.RecordsInJson {
-				thisRecords = thisRecords[1:]
-			}
-
-			onlineStatusLog[target.ID] = thisRecords
-
-		}
+		wg.Add(1)
+		curTarget := target
+		go func() {
+			uptimeCheckTarget(curTarget)
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 
 	//Write the results to a json file
 	if usingConfig.LogToFile {
@@ -109,6 +82,61 @@ func ExecuteUptimeCheck() {
 		os.WriteFile(logFilepath, js, 0775)
 	}
 
+}
+
+func uptimeCheckTarget(target *Target) {
+	//For each target to check online, do the following
+	var thisRecord Record
+	if target.Protocol == "http" || target.Protocol == "https" {
+		log.Println("Updating uptime status for " + target.Name)
+		online, noErrors, laterncy, statusCode := getWebsiteStatusWithLatency(target.URL)
+		thisRecord = Record{
+			Timestamp:  time.Now().Unix(),
+			ID:         target.ID,
+			Name:       target.Name,
+			URL:        target.URL,
+			Protocol:   target.Protocol,
+			Online:     online,
+			HasErrors:  !noErrors,
+			StatusCode: statusCode,
+			Latency:    laterncy,
+		}
+	} else if target.Protocol == "icmp" {
+		log.Println("Updating uptime status for " + target.Name)
+		online, noErrors, maxRtt, err := getICPMHostStatus(target.URL)
+		if err != nil {
+			fmt.Printf("Failed to ping host %v: %v\n", target.Name, err)
+		}
+		thisRecord = Record{
+			Timestamp: time.Now().Unix(),
+			ID:        target.ID,
+			Name:      target.Name,
+			URL:       target.URL,
+			Protocol:  target.Protocol,
+			Online:    online,
+			HasErrors: !noErrors,
+			Latency:   maxRtt,
+		}
+	} else {
+		log.Println("Unknown protocol: " + target.Protocol + ". Skipping")
+		return
+	}
+
+	thisRecords, ok := onlineStatusLog[target.ID]
+	if !ok {
+		//First record. Create the array
+		onlineStatusLog[target.ID] = []*Record{&thisRecord}
+	} else {
+		//Append to the previous record
+		thisRecords = append(thisRecords, &thisRecord)
+
+		//Check if the record is longer than the logged record. If yes, clear out the old records
+		if len(thisRecords) > usingConfig.RecordsInJson {
+			thisRecords = thisRecords[1:]
+		}
+
+		onlineStatusLog[target.ID] = thisRecords
+	}
 }
 
 /*
@@ -141,13 +169,13 @@ func HandleUptimeLogRead(w http.ResponseWriter, r *http.Request) {
 */
 
 // Get website stauts with latency given URL, return is conn succ and its latency and status code
-func getWebsiteStatusWithLatency(url string) (bool, int64, int) {
+func getWebsiteStatusWithLatency(url string) (bool, bool, int64, int) {
 	start := time.Now().UnixNano() / int64(time.Millisecond)
 	statusCode, err := getWebsiteStatus(url)
 	end := time.Now().UnixNano() / int64(time.Millisecond)
 	if err != nil {
 		log.Println(err.Error())
-		return false, 0, 0
+		return false, false, 0, 0
 	} else {
 		diff := end - start
 		succ := false
@@ -161,7 +189,7 @@ func getWebsiteStatusWithLatency(url string) (bool, int64, int) {
 			succ = false
 		}
 
-		return succ, diff, statusCode
+		return true, succ, diff, statusCode
 	}
 
 }
@@ -177,4 +205,25 @@ func getWebsiteStatus(url string) (int, error) {
 	status_code := resp.StatusCode
 	resp.Body.Close()
 	return status_code, nil
+}
+func getICPMHostStatus(host string) (bool, bool, int64, error) {
+	pinger, err := probing.NewPinger(host)
+	if err != nil {
+		return false, false, 0, err
+	}
+
+	pinger.SetPrivileged(true)
+	pinger.Count = 5
+	pinger.Size = 128
+	pinger.TTL = 64
+	if usingConfig.ICMPRequestTimeout != nil {
+		pinger.Timeout = time.Second * time.Duration(*usingConfig.ICMPRequestTimeout)
+	} else {
+		pinger.Timeout = time.Second * 5
+	}
+	if err = pinger.Run(); err != nil {
+		return false, false, 0, err
+	}
+	stats := pinger.Statistics()
+	return stats.PacketsRecv > 0, stats.PacketsSent == stats.PacketsRecv, stats.MinRtt.Milliseconds(), nil
 }
