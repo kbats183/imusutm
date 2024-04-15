@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"sync"
 )
 
 /*
@@ -29,6 +30,7 @@ var exampleTarget = Target{
 	Protocol: "https",
 }
 var usingConfig *Config
+var onlineStatusLogMux sync.Mutex
 var onlineStatusLog = map[string][]*Record{}
 
 // TOTP configs
@@ -39,6 +41,12 @@ var uiDebugMode = false
 
 // Flags
 var listeningPort = flag.String("p", ":8089", "Listening endpoint for http server")
+
+func getOnlineStatusLog() map[string][]*Record {
+	onlineStatusLogMux.Lock()
+	defer onlineStatusLogMux.Unlock()
+	return onlineStatusLog
+}
 
 func main() {
 	flag.Parse()

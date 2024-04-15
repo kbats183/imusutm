@@ -78,7 +78,7 @@ func ExecuteUptimeCheck() {
 	//Write the results to a json file
 	if usingConfig.LogToFile {
 		//Log to file
-		js, _ := json.MarshalIndent(onlineStatusLog, "", " ")
+		js, _ := json.MarshalIndent(getOnlineStatusLog(), "", " ")
 		os.WriteFile(logFilepath, js, 0775)
 	}
 
@@ -122,6 +122,8 @@ func uptimeCheckTarget(target *Target) {
 		return
 	}
 
+	onlineStatusLogMux.Lock()
+	defer onlineStatusLogMux.Unlock()
 	thisRecords, ok := onlineStatusLog[target.ID]
 	if !ok {
 		//First record. Create the array
@@ -144,14 +146,16 @@ func uptimeCheckTarget(target *Target) {
 */
 
 func HandleUptimeLogRead(w http.ResponseWriter, r *http.Request) {
+	onlineStatusLogCopy := getOnlineStatusLog()
+
 	id, _ := utils.GetPara(r, "id")
 	if id == "" {
-		js, _ := json.Marshal(onlineStatusLog)
+		js, _ := json.Marshal(onlineStatusLogCopy)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(js)
 	} else {
 		//Check if that id exists
-		log, ok := onlineStatusLog[id]
+		log, ok := onlineStatusLogCopy[id]
 		if !ok {
 			http.NotFound(w, r)
 			return
