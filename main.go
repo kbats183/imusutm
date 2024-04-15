@@ -70,6 +70,6 @@ func main() {
 	}
 
 	//Start the web server interface
-	log.Println("Listening on :8089")
+	log.Println("Listening on " + *listeningPort)
 	http.ListenAndServe(*listeningPort, nil)
 }
